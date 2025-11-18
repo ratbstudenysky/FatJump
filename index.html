@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>เกมไดโนเสาร์วิ่งไม่สิ้นสุด</title>
+    <!-- Load Tailwind CSS for modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the game environment */
+        @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Chakra Petch', sans-serif;
+            background-color: #f7f7f7; 
+            display: flex;
+            justify-content: center;
+            align-items: center; 
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            padding: 0; /* ลบ padding ออกทั้งหมดเพื่อให้เต็มจอ */
+        }
+
+        #game-container {
+            width: 100%; /* ใช้ความกว้างเต็มที่ */
+            max-width: 900px; /* จำกัดความกว้างสูงสุดบนจอใหญ่ */
+            background-color: #ffffff; 
+            border-radius: 0; 
+            box-shadow: none; 
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0; 
+            margin: 0;
+        }
+
+        #gameCanvas {
+            width: 100%;
+            height: auto;
+            background-color: #ffffff;
+            display: block;
+            border: none; 
+            border-radius: 0; 
+            touch-action: manipulation;
+        }
+
+        #score-board {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            color: #333; 
+            background-color: transparent; 
+            border-radius: 0; 
+            margin-bottom: 0;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9); 
+            display: none; 
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 10;
+            border-radius: 0; 
+            text-align: center;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .game-over-title {
+            font-size: 2.5rem;
+            color: #ff5757;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px rgba(255, 87, 87, 0.8);
+        }
+
+        .final-score {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+        }
+
+        .restart-button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.1s;
+            margin-top: 15px;
+        }
+        
+        .loading-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.8);
+            z-index: 20;
+        }
+
+        .loading-text {
+            color: #ffffff;
+            font-size: 1.5rem;
+            padding: 20px;
+            background-color: #3f3f3f;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <!-- Removed Difficulty Selector -->
+
+        <div id="score-board">
+            <span>คะแนน: <span id="currentScore">0</span></span>
+            <span>คะแนนสูงสุด: <span id="highScore">0</span></span>
+        </div>
+        <div style="position: relative; width: 100%; aspect-ratio: 16 / 5;">
+            <canvas id="gameCanvas"></canvas>
+            <div id="game-over-screen">
+                <div class="game-over-title">เกมโอเวอร์!</div>
+                <div class="final-score">คะแนนสุดท้าย: <span id="finalScoreDisplay">0</span></div>
+                <div class="final-score">คะแนนสูงสุด: <span id="newHighScoreDisplay" class="text-yellow-400">0</span></div>
+                <button class="restart-button" id="restartButton">เริ่มใหม่ (Space/แตะ)</button>
+                <!-- Removed Gemini AI Chat Section -->
+            </div>
+            <!-- Loading screen for asset loading only -->
+            <div id="loadingScreen" class="loading-container">
+                <div class="loading-text">กำลังโหลดรูปภาพ...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('currentScore');
+        const highScoreDisplay = document.getElementById('highScore');
+        const finalScoreDisplay = document.getElementById('finalScoreDisplay');
+        const newHighScoreDisplay = document.getElementById('newHighScoreDisplay');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const restartButton = document.getElementById('restartButton');
+        const loadingScreen = document.getElementById('loadingScreen');
+
+        // --- Game State Variables ---
+        let gameFrame;
+        let isPlaying = false;
+        let isJumping = false;
+        let gameOver = false;
+        let score = 0;
+        let currentHighScore = 0; 
+        let speed = 6; // Base starting speed
+        let timeSinceLastObstacle = 0;
+        let obstacleSpawnInterval = 2000; // milliseconds (Initial Interval)
+        
+        // Base min/max interval for obstacles, which will be divided by current speed
+        const BASE_OBSTACLE_INTERVAL_MIN = 800;
+        const BASE_OBSTACLE_INTERVAL_MAX = 2000;
+        const BASE_SPEED = 6;
+        let frameCount = 0;
+
+        // --- Constants (Game Design) ---
+        const DINO_WIDTH = 50;
+        const DINO_HEIGHT = 50;
+        const GROUND_Y = 10; 
+        const GRAVITY = 0.8;
+        const JUMP_FORCE = 18;
+        const CANVAS_ASPECT_RATIO = 16 / 5; 
+
+        // --- Game Assets ---
+        const dinoRunImg = new Image();
+        dinoRunImg.src = 'https://img2.pic.in.th/pic/Screenshot_2025-11-18_153837-removebg-preview.png';
+        
+        const dinoJumpImg = new Image();
+        dinoJumpImg.src = 'https://img2.pic.in.th/pic/unnamed-removebg-preview09935d99f265cf8d.png';
+
+        const obstacleImg = new Image();
+        obstacleImg.src = 'https://img2.pic.in.th/pic/70100299_0_20251028-112201-removebg-preview.png';
+
+        // --- Asset Loading Logic ---
+        let assetsLoaded = false;
+        let imagesToLoad = [dinoRunImg, dinoJumpImg, obstacleImg]; 
+        let imagesLoadedCount = 0;
+        
+        highScoreDisplay.textContent = '00000';
+
+        function checkLoadingStatus() {
+            if (imagesLoadedCount === imagesToLoad.length) {
+                assetsLoaded = true;
+            }
+            if (assetsLoaded) {
+                loadingScreen.style.display = 'none'; 
+                initGame(); 
+            }
+        }
+
+        imagesToLoad.forEach(img => {
+            img.onload = () => {
+                imagesLoadedCount++;
+                checkLoadingStatus();
+            };
+            img.onerror = () => {
+                console.error("Failed to load image:", img.src);
+                imagesLoadedCount++;
+                checkLoadingStatus();
+            };
+        });
+        
+        // --- Game Classes ---
+
+        class Dino {
+            constructor(x, y, width, height) {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+                this.yVelocity = 0;
+                this.onGround = true;
+                this.runFrame = 0;
+                this.frameDelay = 0;
+            }
+
+            jump() {
+                if (this.onGround) {
+                    this.onGround = false;
+                    this.yVelocity = -JUMP_FORCE;
+                    isJumping = true;
+                }
+            }
+
+            update() {
+                this.yVelocity += GRAVITY;
+                this.y += this.yVelocity;
+
+                const groundLevel = canvas.height - this.height - GROUND_Y;
+                if (this.y >= groundLevel) {
+                    this.y = groundLevel;
+                    this.onGround = true;
+                    isJumping = false;
+                    this.yVelocity = 0;
+                }
+
+                if (this.onGround) {
+                    this.frameDelay++;
+                    if (this.frameDelay % 6 === 0) {
+                        this.runFrame = (this.runFrame + 1) % 2; 
+                        this.frameDelay = 0;
+                    }
+                }
+            }
+
+            draw() {
+                if (!dinoRunImg.complete || !dinoJumpImg.complete) {
+                    ctx.fillStyle = 'red';
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                    return;
+                }
+                
+                let imgToDraw = isJumping ? dinoJumpImg : dinoRunImg;
+                ctx.drawImage(imgToDraw, this.x, this.y, this.width, this.height);
+            }
+
+            getBounds() {
+                return {
+                    x: this.x,
+                    y: this.y,
+                    width: this.width,
+                    height: this.height
+                };
+            }
+        }
+
+        class Obstacle {
+            constructor() {
+                this.x = canvas.width;
+                // Scale obstacle size based on Dino size for better consistency
+                this.width = DINO_WIDTH * 0.8; 
+                this.height = DINO_HEIGHT * 0.8;
+                // Minor offset for visual grounding
+                this.y = canvas.height - this.height - GROUND_Y + 5; 
+                this.isImageLoaded = obstacleImg.complete;
+            }
+
+            update() {
+                this.x -= speed;
+            }
+
+            draw() {
+                if (this.isImageLoaded) {
+                    ctx.drawImage(obstacleImg, this.x, this.y, this.width, this.height);
+                } else { 
+                    ctx.fillStyle = '#4a7d4a'; 
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                }
+            }
+
+            getBounds() {
+                return {
+                    x: this.x,
+                    y: this.y,
+                    width: this.width,
+                    height: this.height
+                };
+            }
+        }
+
+        // --- Game Instances and Arrays ---
+        let dino;
+        let obstacles = [];
+
+        // --- Game Functions ---
+
+        function resizeCanvas() {
+            const container = document.getElementById('game-container');
+            const containerWidth = container.clientWidth; 
+            
+            canvas.width = containerWidth;
+            canvas.height = containerWidth / CANVAS_ASPECT_RATIO;
+            
+            if (dino) {
+                dino.x = canvas.width / 10;
+                dino.y = canvas.height - dino.height - GROUND_Y;
+            }
+            
+            draw(); 
+        }
+
+        function initGame() {
+            dino = new Dino(canvas.width / 10, canvas.height - DINO_HEIGHT - GROUND_Y, DINO_WIDTH, DINO_HEIGHT);
+            
+            resizeCanvas(); 
+            window.removeEventListener('resize', resizeCanvas); 
+            window.addEventListener('resize', resizeCanvas);
+
+            // Cancel any existing loop
+            if (gameFrame) {
+                cancelAnimationFrame(gameFrame);
+            }
+
+            // Reset state
+            gameOver = false;
+            isPlaying = true;
+            score = 0;
+            speed = BASE_SPEED; // Reset speed to starting base speed
+            obstacles = [];
+            timeSinceLastObstacle = 0;
+            frameCount = 0;
+            gameOverScreen.style.display = 'none';
+
+            // Start Game Loop
+            gameLoop(0); 
+        }
+
+        function spawnObstacle(deltaTime) {
+            timeSinceLastObstacle += deltaTime;
+
+            if (timeSinceLastObstacle > obstacleSpawnInterval) {
+                obstacles.push(new Obstacle());
+                
+                // Calculate next interval: The faster the speed, the shorter the interval
+                const speedFactor = speed / BASE_SPEED; 
+                const currentMaxSpawn = BASE_OBSTACLE_INTERVAL_MAX / speedFactor;
+                const currentMinSpawn = BASE_OBSTACLE_INTERVAL_MIN / speedFactor;
+                
+                obstacleSpawnInterval = Math.random() * (currentMaxSpawn - currentMinSpawn) + currentMinSpawn;
+                timeSinceLastObstacle = 0;
+            }
+        }
+
+        function checkCollision(dinoBounds, obstacleBounds) {
+            return dinoBounds.x < obstacleBounds.x + obstacleBounds.width &&
+                   dinoBounds.x + dinoBounds.width > obstacleBounds.x &&
+                   dinoBounds.y < obstacleBounds.y + obstacleBounds.height &&
+                   dinoBounds.y + dinoBounds.height > obstacleBounds.y;
+        }
+
+        function updateGame(deltaTime) {
+            if (gameOver || !isPlaying) return;
+
+            dino.update();
+            spawnObstacle(deltaTime);
+            obstacles.forEach(obstacle => obstacle.update());
+
+            obstacles = obstacles.filter(obstacle => obstacle.x + obstacle.width > 0);
+
+            const dinoBounds = dino.getBounds();
+            for (let i = 0; i < obstacles.length; i++) {
+                const obsBounds = obstacles[i].getBounds();
+                if (checkCollision(dinoBounds, obsBounds)) {
+                    endGame();
+                    return;
+                }
+            }
+
+            frameCount++;
+            score += speed * 0.1; 
+            scoreDisplay.textContent = score.toFixed(0).padStart(5, '0');
+
+            // Increase speed dynamically every 500 frames (makes it progressively harder)
+            if (frameCount % 500 === 0) {
+                speed += 0.5;
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Ground
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height - GROUND_Y);
+            ctx.lineTo(canvas.width, canvas.height - GROUND_Y);
+            ctx.stroke();
+
+            dino.draw();
+            obstacles.forEach(obstacle => obstacle.draw());
+        }
+
+        let lastTime = 0;
+        function gameLoop(timestamp) {
+            if (!isPlaying) return;
+
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            updateGame(deltaTime);
+            draw();
+
+            gameFrame = requestAnimationFrame(gameLoop);
+        }
+
+        function endGame() {
+            gameOver = true;
+            isPlaying = false;
+            if (gameFrame) {
+                // FIX: Properly cancel the animation frame to prevent "game freezing" after death
+                cancelAnimationFrame(gameFrame);
+                gameFrame = null;
+            }
+
+            finalScoreDisplay.textContent = score.toFixed(0).padStart(5, '0');
+            
+            if (score > currentHighScore) {
+                currentHighScore = Math.floor(score);
+                highScoreDisplay.textContent = currentHighScore.toFixed(0).padStart(5, '0');
+                newHighScoreDisplay.textContent = '🎉 ' + currentHighScore.toFixed(0).padStart(5, '0') + ' (ใหม่!)';
+                newHighScoreDisplay.classList.add('text-yellow-400');
+            } else {
+                 newHighScoreDisplay.textContent = currentHighScore.toFixed(0).padStart(5, '0');
+                 newHighScoreDisplay.classList.remove('text-yellow-400');
+            }
+            
+            gameOverScreen.style.display = 'flex';
+        }
+
+        // --- Event Listeners (Input) ---
+
+        function handleJump() {
+            if (gameOver) {
+                initGame();
+            } else if (isPlaying && dino && dino.onGround) {
+                dino.jump();
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.key === ' ') {
+                e.preventDefault(); 
+                handleJump();
+            }
+        });
+
+        document.addEventListener('touchstart', (e) => {
+             if (e.target.closest('#gameCanvas') || gameOver) {
+                e.preventDefault();
+                handleJump();
+            }
+        });
+        
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('#gameCanvas')) {
+                e.preventDefault();
+                handleJump();
+            } else if (e.target.closest('#restartButton')) {
+                initGame();
+            }
+        });
+
+        restartButton.addEventListener('click', () => {
+            initGame();
+        });
+
+        // Start game on load
+        window.onload = function() {
+            checkLoadingStatus();
+        };
+
+    </script>
+</body>
+</html>
